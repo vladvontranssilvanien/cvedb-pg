@@ -42,6 +42,22 @@ cp .env.example .env
 # DB_USER=postgres
 # DB_PASSWORD=postgres
 ```
+
+### Optional: Ingest from NVD (live data)
+
+This project can fetch a single CVE from NVD (v2.0) and upsert it into the database.
+
+```bash
+# Example: Log4Shell
+python -m app.cli ingest-cve CVE-2021-44228
+
+# Verify from CLI
+python -m app.cli search --keyword log4j
+
+# Idempotency: re-running will not duplicate references
+python -m app.cli ingest-cve CVE-2021-44228
+
+
 ### Track A — Console (CLI-first, reproductibil)
 
 #### Initialize & seed

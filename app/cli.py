@@ -283,24 +283,26 @@ def ingest_cve(cve_id):
             status="New",
         ))
 
-        # references (replace existing)
-        seen = set()
-    for r in v.get("references", []):
-        ref_url = (r.get("url") or "").strip()
-        if not ref_url or ref_url in seen:
-            continue
-        seen.add(ref_url)
-        ref_source = "nvd"
-        ref_tags = ",".join(r.get("tags", [])) if r.get("tags") else None
+        db.flush()
 
-        db.execute(
-            text("""
-                INSERT INTO reference (cve_id, url, source, tags)
-                VALUES (:cve_id, :url, :source, :tags)
-                ON CONFLICT (cve_id, url) DO NOTHING
-            """),
-            dict(cve_id=cve_id, url=ref_url, source=ref_source, tags=ref_tags)
-        )
+        seen = set()
+        for r in v.get("references", []):
+            ref_url = (r.get("url") or "").strip()
+            if not ref_url or ref_url in seen:
+                continue
+            seen.add(ref_url)
+
+            ref_source = "nvd"
+            ref_tags = ",".join(r.get("tags", [])) if r.get("tags") else None
+
+            db.execute(
+                text("""
+                    INSERT INTO reference (cve_id, url, source, tags)
+                    VALUES (:cve_id, :url, :source, :tags)
+                    ON CONFLICT (cve_id, url) DO NOTHING
+                """),
+                {"cve_id": cve_id, "url": ref_url, "source": ref_source, "tags": ref_tags}
+            )
 
         db.commit()
 
