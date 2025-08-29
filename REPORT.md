@@ -113,4 +113,106 @@ ORDER BY c.published DESC NULLS LAST, c.cvss_score DESC NULLS LAST;
 8) Export (schema/DDL):
    - **Export** → select **Tables** + **structure only** → **SQL** → **Save** a `.sql` with the schema.
 
+## 9) Troubleshooting — Quick Playbook
+
+### Connectivity & infra
+```bash
+# Check containers up
+docker compose ps
+
+# If DB isn't up, start it
+docker compose up -d
+
+# Inspect DB logs (last 50 lines)
+docker compose logs db --tail 50
+
+```
+# Connect to PostgreSQL running in Docker from your host machine.
+# -h localhost : connect via the port exposed by Docker
+# -p 5432      : default PostgreSQL port exposed by compose
+# -U postgres  : username (matches docker-compose)
+# -d cvedb     : database name (matches .env / compose)
+psql -h localhost -p 5432 -U postgres -d cvedb
+
+# When prompted for a password, type:
+# postgres
+
+**Common issues**
+- **Connection refused** → Database container is not running. Fix: `docker compose up -d`.
+- **Authentication failed** → Verify `.env` values and Adminer credentials (user: `postgres`, password: `postgres`), and ensure `DB_HOST=localhost`.
+- **Port 5432 already in use** → Another PostgreSQL is running locally. Stop it or change the mapping in `docker-compose.yml`.
+- **psql not found** → Install PostgreSQL client tools or use Adminer (http://localhost:8080) for SQL.
+- **No data returned** (empty queries) → Run the seed once: `python -m app.cli init && python -m app.cli insert-sample`.
+
+### Python CLI issues
+```bash
+# Activate the project virtual environment (must be done in every new shell)
+source .venv/bin/activate
+
+# Reinstall dependencies to ensure the environment is consistent
+pip install -r requirements.txt
+
+# Sanity check: CLI entrypoints are visible
+python -m app.cli --help
+
+# If the CLI returns no rows on search, make sure the DB has tables and demo data:
+python -m app.cli init           # creates tables (safe to re-run)
+python -m app.cli insert-sample  # inserts 2 demo CVEs + relations (idempotent enough for dev)
+
+### Status updates (CLI + SQL equivalent)
+```bash
+# Update lifecycle status and append an audit entry
+python -m app.cli set-status CVE-2024-12345 Patched --note "Vendor fix confirmed"
+
+-- Equivalent SQL (run in Adminer → SQL command)
+INSERT INTO status_history(cve_id, status, note)
+VALUES ('CVE-2024-12345', 'Patched', 'Vendor fix confirmed');
+
+UPDATE cve
+SET status = 'Patched'
+WHERE cve_id = 'CVE-2024-12345';
+
+
+### Exports & artifacts
+```bash
+# Ensure a dedicated folder for sample artifacts
+mkdir -p samples
+
+# Export a filtered dataset to CSV (same filters as the CLI search)
+python -m app.cli export-csv --severity HIGH --outfile samples/high.csv
+
+# Quick check the artifact exists and is readable
+ls -lh samples/high.csv
+head -n 5 samples/high.csv
+
+# Note: generic CSVs are ignored by Git via .gitignore;
+#       versioned examples should live under `samples/`.
+
+
+### Schema dump hygiene
+```bash
+# Regenerate the schema-only DDL from the live database
+docker compose exec -T db pg_dump -U postgres -d cvedb --schema-only > schema.sql
+
+# Quick sanity checks on the artifact
+ls -lh schema.sql
+head -n 20 schema.sql
+
+# Version the refreshed schema dump (keep it in Git for reviewers)
+git add schema.sql
+git commit -m "chore(db): refresh schema dump"
+git push
+
+## 10) Roadmap / Next steps
+
+- **JSON export:** Add `export-json` alongside CSV for integrations (SIEM/SOAR pipelines).
+- **NVD ingestion:** Implement `ingest_nvd.py` to batch-import NVD JSON feeds (rate-limited, resumable).
+- **Analyst reports:** Add `report-stats` (e.g., monthly counts by severity, top affected vendors, average CVSS).
+- **Search UX:** Support `--vendor`, `--product`, and keyword search across `references`.
+- **Indexes & performance:** Add GIN index for `summary/description` (trigram) and btree on `published`, `severity`.
+- **Data quality:** Validate CVE IDs format, enforce severity domain, and normalize status transitions.
+- **Tests:** Unit tests for model constraints and CLI behaviors (pytest); a tiny seed fixture per test.
+- **Packaging:** Ship the CLI as a Python package and/or a single Docker image (`cli` container) for zero-setup runs.
+- **UI option:** Optional FastAPI + a minimal React dashboard for read-only browsing and saved queries.
+
 
