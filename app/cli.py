@@ -1,7 +1,7 @@
 import click
 from datetime import date
-from sqlalchemy import text, bindparam
-from sqlalchemy.types import String, Integer
+from sqlalchemy import text, bindparam, String
+from sqlalchemy.types import Integer
 import requests
 from datetime import datetime
 from app.db import engine, SessionLocal
