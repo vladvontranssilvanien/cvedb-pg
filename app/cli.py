@@ -1,6 +1,7 @@
 import click
 from datetime import date
-from sqlalchemy import text
+from sqlalchemy import text, bindparam
+from sqlalchemy.types import String, Integer
 import requests
 from datetime import datetime
 from app.db import engine, SessionLocal
@@ -91,49 +92,52 @@ def insert_sample():
 
 @cli.command()
 @click.option("--keyword", help="Filter by text in summary or description")
-@click.option("--severity", type=click.Choice(
-    ["NONE", "LOW", "MEDIUM", "HIGH", "CRITICAL"], case_sensitive=False))
+@click.option("--severity", type=click.Choice(["NONE", "LOW", "MEDIUM", "HIGH", "CRITICAL"], case_sensitive=False))
 @click.option("--start-date", help="YYYY-MM-DD (published on or after)")
 @click.option("--end-date", help="YYYY-MM-DD (published on or before)")
 @click.option("--limit", default=25, type=int)
 @click.option("--offset", default=0, type=int)
 def search(keyword, severity, start_date, end_date, limit, offset):
-    "Search CVEs with simple filters"
-    sql = """
-    SELECT
-      c.cve_id, c.summary, c.severity, c.cvss_score, c.published,
-      COALESCE(string_agg(DISTINCT v.name || ':' || p.name, ', '), '-') "
-      "AS products,
-      c.cwe_id
-    FROM cve c
-    LEFT JOIN affected a ON a.cve_id = c.cve_id
-    LEFT JOIN product  p ON p.product_id = a.product_id
-    LEFT JOIN vendor   v ON v.vendor_id = p.vendor_id
-    WHERE ( c.summary ILIKE CAST(:kw_like AS TEXT) OR c.description "
-    "ILIKE CAST (:kw_like AS TEXT) OR :kw_like IS NULL )
-      AND ( c.severity = CAST(:sev AS TEXT) OR :sev IS NULL )
-      AND ( c.published >= CAST(:start AS DATE) OR :start IS NULL )
-      AND ( c.published <= CAST(:end   AS DATE) OR :end IS NULL )
-    GROUP BY c.cve_id
-    ORDER BY c.published DESC NULLS LAST, c.cvss_score DESC NULLS LAST
-    LIMIT :limit OFFSET :offset
-    """
-    kw_like = f"%{keyword}%" if keyword else None
-    params = dict(
-        kw_like=kw_like,
-        sev=severity.upper() if severity else None,
-        start=start_date,
-        end=end_date,
-        limit=limit,
-        offset=offset,
+    """Search CVEs with simple filters"""
+    sql = text("""
+SELECT
+  c.cve_id, c.summary, c.severity, c.cvss_score, c.published,
+  COALESCE(string_agg(DISTINCT v.name || ':' || p.name, ', '), '-') AS products,
+  c.cwe_id
+FROM cve c
+LEFT JOIN affected a ON a.cve_id = c.cve_id
+LEFT JOIN product  p ON p.product_id = a.product_id
+LEFT JOIN vendor   v ON v.vendor_id = p.vendor_id
+WHERE ( (:kw_like IS NULL) OR c.summary ILIKE CAST(:kw_like AS TEXT) OR c.description ILIKE CAST(:kw_like AS TEXT) )
+  AND ( (:sev    IS NULL) OR c.severity = CAST(:sev AS TEXT) )
+  AND ( (:start  IS NULL) OR c.published >= CAST(:start AS DATE) )
+  AND ( (:end    IS NULL) OR c.published <= CAST(:end   AS DATE) )
+GROUP BY c.cve_id
+ORDER BY c.published DESC NULLS LAST, c.cvss_score DESC NULLS LAST
+LIMIT :limit OFFSET :offset
+""").bindparams(
+        bindparam("kw_like", type_=String),
+        bindparam("sev", type_=String),
+        bindparam("start", type_=String),
+        bindparam("end", type_=String),
+        bindparam("limit", type_=Integer),
+        bindparam("offset", type_=Integer),
     )
 
+    kw_like = f"%{keyword}%" if keyword else None
+    params = {
+        "kw_like": kw_like,
+        "sev": severity.upper() if severity else None,
+        "start": start_date,
+        "end": end_date,
+        "limit": limit,
+        "offset": offset,
+    }
     with SessionLocal() as db:
-        rows = db.execute(text(sql), params).mappings().all()
+        rows = db.execute(sql, params).mappings().all()
     for r in rows:
         print(
-            f"{r['cve_id']} | {r['severity']} | CVSS {
-                r['cvss_score']} | {r['published']} | {r['products']}\n"
+            f"{r['cve_id']} | {r['severity']} | CVSS {r['cvss_score']} | {r['published']} | {r['products']}\n"
             f"  {r['summary']}\n"
             f"  CWE: {r['cwe_id']}\n"
         )
@@ -162,43 +166,47 @@ def set_status(cve_id, status, note):
 @cli.command("export-csv")
 @click.option("--outfile", default="export.csv", help="Output CSV path")
 @click.option("--keyword", help="Filter by text in summary or description")
-@click.option("--severity", type=click.Choice(
-    ["NONE", "LOW", "MEDIUM", "HIGH", "CRITICAL"], case_sensitive=False))
+@click.option("--severity", type=click.Choice(["NONE", "LOW", "MEDIUM", "HIGH", "CRITICAL"], case_sensitive=False))
 @click.option("--start-date", help="YYYY-MM-DD (published on or after)")
 @click.option("--end-date", help="YYYY-MM-DD (published on or before)")
 def export_csv(outfile, keyword, severity, start_date, end_date):
-    "Export search results to CSV (same filters as `search`)"
-    sql = """
-    SELECT
-      c.cve_id, c.summary, c.severity, c.cvss_score, c.published, c.status,
-      COALESCE(string_agg(DISTINCT v.name || ':' || p.name, ', '), '-') "
-      "AS products,
-      c.cwe_id
-    FROM cve c
-    LEFT JOIN affected a ON a.cve_id = c.cve_id
-    LEFT JOIN product  p ON p.product_id = a.product_id
-    LEFT JOIN vendor   v ON v.vendor_id = p.vendor_id
-    WHERE ( c.summary ILIKE CAST(:kw_like AS TEXT) OR c.description "
-    "ILIKE CAST(:kw_like AS TEXT) OR :kw_like IS NULL )
-      AND ( c.severity = CAST(:sev AS TEXT) OR :sev IS NULL )
-      AND ( c.published >= CAST(:start AS DATE) OR :start IS NULL )
-      AND ( c.published <= CAST(:end   AS DATE) OR :end   IS NULL )
-    GROUP BY c.cve_id
-    ORDER BY c.published DESC NULLS LAST, c.cvss_score DESC NULLS LAST
-    """
-    kw_like = f"%{keyword}%" if keyword else None
-    params = dict(
-        kw_like=kw_like,
-        sev=severity.upper() if severity else None,
-        start=start_date,
-        end=end_date,
+    """Export search results to CSV (same filters as `search`)"""
+    sql = text("""
+SELECT
+  c.cve_id, c.summary, c.severity, c.cvss_score, c.published, c.status,
+  COALESCE(string_agg(DISTINCT v.name || ':' || p.name, ', '), '-') AS products,
+  c.cwe_id
+FROM cve c
+LEFT JOIN affected a ON a.cve_id = c.cve_id
+LEFT JOIN product  p ON p.product_id = a.product_id
+LEFT JOIN vendor   v ON v.vendor_id = p.vendor_id
+WHERE ( (:kw_like IS NULL) OR c.summary ILIKE CAST(:kw_like AS TEXT) OR c.description ILIKE CAST(:kw_like AS TEXT) )
+  AND ( (:sev    IS NULL) OR c.severity = CAST(:sev AS TEXT) )
+  AND ( (:start  IS NULL) OR c.published >= CAST(:start AS DATE) )
+  AND ( (:end    IS NULL) OR c.published <= CAST(:end   AS DATE) )
+GROUP BY c.cve_id
+ORDER BY c.published DESC NULLS LAST, c.cvss_score DESC NULLS LAST
+""").bindparams(
+        bindparam("kw_like", type_=String),
+        bindparam("sev", type_=String),
+        bindparam("start", type_=String),
+        bindparam("end", type_=String),
     )
-    with SessionLocal() as db, open(
-            outfile, "w", newline="", encoding="utf-8") as f:
-        rows = db.execute(text(sql), params).mappings().all()
+
+    kw_like = f"%{keyword}%" if keyword else None
+    params = {
+        "kw_like": kw_like,
+        "sev": severity.upper() if severity else None,
+        "start": start_date,
+        "end": end_date,
+    }
+    with SessionLocal() as db, open(outfile, "w", newline="", encoding="utf-8") as f:
+        rows = db.execute(sql, params).mappings().all()
         writer = csv.writer(f)
-        writer.writerow(["cve_id", "summary", "severity", "cvss_score",
-                         "published", "status", "products", "cwe_id"])
+        writer.writerow([
+            "cve_id", "summary", "severity", "cvss_score",
+            "published", "status", "products", "cwe_id"
+        ])
         for r in rows:
             writer.writerow([
                 r["cve_id"], r["summary"], r["severity"], r["cvss_score"],
