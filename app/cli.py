@@ -184,7 +184,8 @@ def export_csv(outfile, keyword, severity, start_date, end_date):
     with SessionLocal() as db, open(outfile, "w", newline="", encoding="utf-8") as f:
         rows = db.execute(text(sql), params).mappings().all()
         writer = csv.writer(f)
-        writer.writerow(["cve_id","summary","severity","cvss_score","published","status","products","cwe_id"])
+        writer.writerow(["cve_id", "summary", "severity", "cvss_score",
+                         "published", "status", "products", "cwe_id"])
         for r in rows:
             writer.writerow([
                 r["cve_id"], r["summary"], r["severity"], r["cvss_score"],
