@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict brje9bHyYuTh4FhvUXBu1Ig0OqkDPMM3jfPU940QEpLmT5vGFMt59kKaC8ktxWo
+\restrict mSGcdl3P5Y7p3yYVDbohaRuqN2Dxu5MBq8VXFc2AlArGn7H1qSMLeWEMGG32OPo
 
 -- Dumped from database version 16.10 (Debian 16.10-1.pgdg13+1)
 -- Dumped by pg_dump version 16.10 (Debian 16.10-1.pgdg13+1)
@@ -52,7 +52,7 @@ CREATE TABLE public.cve (
     cvss_version character varying,
     cvss_score double precision,
     cvss_vector character varying,
-    cwe_id character varying,
+    cwe_id character varying NOT NULL,
     source character varying,
     status character varying NOT NULL
 );
@@ -343,6 +343,14 @@ ALTER TABLE ONLY public.status_history
 
 
 --
+-- Name: reference uq_reference_cve_url; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.reference
+    ADD CONSTRAINT uq_reference_cve_url UNIQUE (cve_id, url);
+
+
+--
 -- Name: product uq_vendor_product; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -461,5 +469,5 @@ ALTER TABLE ONLY public.status_history
 -- PostgreSQL database dump complete
 --
 
-\unrestrict brje9bHyYuTh4FhvUXBu1Ig0OqkDPMM3jfPU940QEpLmT5vGFMt59kKaC8ktxWo
+\unrestrict mSGcdl3P5Y7p3yYVDbohaRuqN2Dxu5MBq8VXFc2AlArGn7H1qSMLeWEMGG32OPo
 
