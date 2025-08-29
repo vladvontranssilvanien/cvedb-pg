@@ -1,0 +1,2 @@
+cve_id,summary,severity,cvss_score,published,status,products,cwe_id
+CVE-2024-12345,ExampleCMS XSS in comments,HIGH,7.4,2024-06-10,Patched,Acme:ExampleCMS,CWE-79
