@@ -5,6 +5,7 @@ from sqlalchemy import text
 from app.db import engine, SessionLocal
 from app.models import Base, CVE, CWE, Vendor, Product, Affected, Reference, StatusHistory
 
+
 @click.group()
 def cli():
     "CVEDB command line interface"
@@ -101,22 +102,24 @@ def search(keyword, severity, start_date, end_date, limit, offset):
     LEFT JOIN affected a ON a.cve_id = c.cve_id
     LEFT JOIN product  p ON p.product_id = a.product_id
     LEFT JOIN vendor   v ON v.vendor_id = p.vendor_id
-    WHERE ( :kw IS NULL OR c.summary ILIKE '%'||:kw||'%' OR c.description ILIKE '%'||:kw||'%' )
-      AND ( :sev IS NULL OR c.severity = :sev )
-      AND ( :start IS NULL OR c.published >= :start::date )
-      AND ( :end   IS NULL OR c.published <= :end::date )
+    WHERE ( c.summary ILIKE CAST(:kw_like AS TEXT) OR c.description ILIKE CAST(:kw_like AS TEXT) OR :kw_like IS NULL )
+      AND ( c.severity = CAST(:sev AS TEXT) OR :sev IS NULL )
+      AND ( c.published >= CAST(:start AS DATE) OR :start IS NULL )
+      AND ( c.published <= CAST(:end   AS DATE) OR :end IS NULL )
     GROUP BY c.cve_id
     ORDER BY c.published DESC NULLS LAST, c.cvss_score DESC NULLS LAST
     LIMIT :limit OFFSET :offset
     """
+    kw_like = f"%{keyword}%" if keyword else None
     params = dict(
-        kw=keyword,
+        kw_like=kw_like,
         sev=severity.upper() if severity else None,
         start=start_date,
         end=end_date,
         limit=limit,
         offset=offset,
     )
+
     with SessionLocal() as db:
         rows = db.execute(text(sql), params).mappings().all()
     for r in rows:
