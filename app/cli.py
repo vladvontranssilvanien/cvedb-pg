@@ -4,6 +4,7 @@ from sqlalchemy import text
 
 from app.db import engine, SessionLocal
 from app.models import Base, CVE, CWE, Vendor, Product, Affected, Reference, StatusHistory
+import csv
 
 
 @click.group()
@@ -147,6 +148,49 @@ def set_status(cve_id, status, note):
         )
         db.commit()
     click.secho("📝 Status updated", fg="green")
+
+
+@cli.command("export-csv")
+@click.option("--outfile", default="export.csv", help="Output CSV path")
+@click.option("--keyword", help="Filter by text in summary or description")
+@click.option("--severity", type=click.Choice(["NONE", "LOW", "MEDIUM", "HIGH", "CRITICAL"], case_sensitive=False))
+@click.option("--start-date", help="YYYY-MM-DD (published on or after)")
+@click.option("--end-date", help="YYYY-MM-DD (published on or before)")
+def export_csv(outfile, keyword, severity, start_date, end_date):
+    "Export search results to CSV (same filters as `search`)"
+    sql = """
+    SELECT
+      c.cve_id, c.summary, c.severity, c.cvss_score, c.published, c.status,
+      COALESCE(string_agg(DISTINCT v.name || ':' || p.name, ', '), '-') AS products,
+      c.cwe_id
+    FROM cve c
+    LEFT JOIN affected a ON a.cve_id = c.cve_id
+    LEFT JOIN product  p ON p.product_id = a.product_id
+    LEFT JOIN vendor   v ON v.vendor_id = p.vendor_id
+    WHERE ( c.summary ILIKE CAST(:kw_like AS TEXT) OR c.description ILIKE CAST(:kw_like AS TEXT) OR :kw_like IS NULL )
+      AND ( c.severity = CAST(:sev AS TEXT) OR :sev IS NULL )
+      AND ( c.published >= CAST(:start AS DATE) OR :start IS NULL )
+      AND ( c.published <= CAST(:end   AS DATE) OR :end   IS NULL )
+    GROUP BY c.cve_id
+    ORDER BY c.published DESC NULLS LAST, c.cvss_score DESC NULLS LAST
+    """
+    kw_like = f"%{keyword}%" if keyword else None
+    params = dict(
+        kw_like=kw_like,
+        sev=severity.upper() if severity else None,
+        start=start_date,
+        end=end_date,
+    )
+    with SessionLocal() as db, open(outfile, "w", newline="", encoding="utf-8") as f:
+        rows = db.execute(text(sql), params).mappings().all()
+        writer = csv.writer(f)
+        writer.writerow(["cve_id","summary","severity","cvss_score","published","status","products","cwe_id"])
+        for r in rows:
+            writer.writerow([
+                r["cve_id"], r["summary"], r["severity"], r["cvss_score"],
+                r["published"], r["status"], r["products"], r["cwe_id"]
+            ])
+    click.secho(f"📦 Exported {len(rows)} rows -> {outfile}", fg="green")
 
 
 if __name__ == "__main__":
