@@ -1,0 +1,3 @@
+cve_id,summary,severity,cvss_score,published,status,products,cwe_id
+CVE-2024-12345,ExampleCMS XSS in comments,HIGH,7.4,2024-06-10,New,Acme:ExampleCMS,CWE-79
+CVE-2014-0160,"The (1) TLS and (2) DTLS implementations in OpenSSL 1.0.1 before 1.0.1g do not properly handle Heartbeat Extension packets, which allows remote attackers to obtain sensitive information from process memory via crafted packets that trigger a buffer over-read, as demonstrated by reading private keys, related to d1_both.c and t1_lib.c, aka the Heartbleed bug.",HIGH,7.5,2014-04-07,New,-,CWE-125

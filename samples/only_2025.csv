@@ -1,0 +1,2 @@
+cve_id,summary,severity,cvss_score,published,status,products,cwe_id
+CVE-2025-00001,ShopMaster SQL Injection in product filter,CRITICAL,9.1,2025-02-05,Patched,Globex:ShopMaster,CWE-89
