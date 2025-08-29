@@ -3,4 +3,4 @@ psycopg[binary]==3.2.9
 python-dotenv==1.0.1
 click==8.1.7
 uvloop==0.20.0; platform_system != "Windows" and python_version < "3.13"
-
+requests==2.32.3
