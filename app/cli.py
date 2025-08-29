@@ -4,7 +4,7 @@ from sqlalchemy import text
 import requests
 from datetime import datetime
 from app.db import engine, SessionLocal
-from app.models import Base, CVE, CWE, Vendor, Product, Affected, Reference, StatusHistory
+from app.models import Base, CVE, CWE, Vendor, Product, Affected, Reference
 import csv
 
 
@@ -58,7 +58,8 @@ def insert_sample():
         c2 = CVE(
             cve_id="CVE-2025-00001",
             summary="ShopMaster SQL Injection in product filter",
-            description="Improper neutralization of special elements in SQL commands.",
+            description="Improper neutralization of special elements in SQL "
+            "commands.",
             published=date.fromisoformat("2025-02-05"),
             modified=date.fromisoformat("2025-02-06"),
             severity="CRITICAL",
@@ -78,8 +79,10 @@ def insert_sample():
             Affected(cve_id=c2.cve_id, product_id=shopmaster.product_id),
         ])
         db.add_all([
-            Reference(cve_id=c1.cve_id, url="https://example.com/advisories/2024-12345", source="vendor", tags="advisory"),
-            Reference(cve_id=c2.cve_id, url="https://researchlab.example/poc", source="research", tags="poc,exploit"),
+            Reference(cve_id=c1.cve_id, url="https://example.com/advisories/ "
+                      "2024-12345", source="vendor", tags="advisory"),
+            Reference(cve_id=c2.cve_id, url="https://researchlab.example/poc",
+                      source="research", tags="poc,exploit"),
         ])
 
         db.commit()
@@ -88,7 +91,8 @@ def insert_sample():
 
 @cli.command()
 @click.option("--keyword", help="Filter by text in summary or description")
-@click.option("--severity", type=click.Choice(["NONE", "LOW", "MEDIUM", "HIGH", "CRITICAL"], case_sensitive=False))
+@click.option("--severity", type=click.Choice(
+    ["NONE", "LOW", "MEDIUM", "HIGH", "CRITICAL"], case_sensitive=False))
 @click.option("--start-date", help="YYYY-MM-DD (published on or after)")
 @click.option("--end-date", help="YYYY-MM-DD (published on or before)")
 @click.option("--limit", default=25, type=int)
@@ -98,13 +102,15 @@ def search(keyword, severity, start_date, end_date, limit, offset):
     sql = """
     SELECT
       c.cve_id, c.summary, c.severity, c.cvss_score, c.published,
-      COALESCE(string_agg(DISTINCT v.name || ':' || p.name, ', '), '-') AS products,
+      COALESCE(string_agg(DISTINCT v.name || ':' || p.name, ', '), '-') "
+      "AS products,
       c.cwe_id
     FROM cve c
     LEFT JOIN affected a ON a.cve_id = c.cve_id
     LEFT JOIN product  p ON p.product_id = a.product_id
     LEFT JOIN vendor   v ON v.vendor_id = p.vendor_id
-    WHERE ( c.summary ILIKE CAST(:kw_like AS TEXT) OR c.description ILIKE CAST(:kw_like AS TEXT) OR :kw_like IS NULL )
+    WHERE ( c.summary ILIKE CAST(:kw_like AS TEXT) OR c.description "
+    "ILIKE CAST (:kw_like AS TEXT) OR :kw_like IS NULL )
       AND ( c.severity = CAST(:sev AS TEXT) OR :sev IS NULL )
       AND ( c.published >= CAST(:start AS DATE) OR :start IS NULL )
       AND ( c.published <= CAST(:end   AS DATE) OR :end IS NULL )
@@ -126,7 +132,8 @@ def search(keyword, severity, start_date, end_date, limit, offset):
         rows = db.execute(text(sql), params).mappings().all()
     for r in rows:
         print(
-            f"{r['cve_id']} | {r['severity']} | CVSS {r['cvss_score']} | {r['published']} | {r['products']}\n"
+            f"{r['cve_id']} | {r['severity']} | CVSS {
+                r['cvss_score']} | {r['published']} | {r['products']}\n"
             f"  {r['summary']}\n"
             f"  CWE: {r['cwe_id']}\n"
         )
@@ -140,7 +147,8 @@ def set_status(cve_id, status, note):
     "Track lifecycle status in status_history and on the CVE record"
     with SessionLocal() as db:
         db.execute(
-            text("INSERT INTO status_history(cve_id,status,note) VALUES (:id,:st,:nt)"),
+            text("INSERT INTO status_history(cve_id,status,note) "
+                 "VALUES (:id,:st,:nt)"),
             dict(id=cve_id, st=status, nt=note),
         )
         db.execute(
@@ -154,7 +162,8 @@ def set_status(cve_id, status, note):
 @cli.command("export-csv")
 @click.option("--outfile", default="export.csv", help="Output CSV path")
 @click.option("--keyword", help="Filter by text in summary or description")
-@click.option("--severity", type=click.Choice(["NONE", "LOW", "MEDIUM", "HIGH", "CRITICAL"], case_sensitive=False))
+@click.option("--severity", type=click.Choice(
+    ["NONE", "LOW", "MEDIUM", "HIGH", "CRITICAL"], case_sensitive=False))
 @click.option("--start-date", help="YYYY-MM-DD (published on or after)")
 @click.option("--end-date", help="YYYY-MM-DD (published on or before)")
 def export_csv(outfile, keyword, severity, start_date, end_date):
@@ -162,13 +171,15 @@ def export_csv(outfile, keyword, severity, start_date, end_date):
     sql = """
     SELECT
       c.cve_id, c.summary, c.severity, c.cvss_score, c.published, c.status,
-      COALESCE(string_agg(DISTINCT v.name || ':' || p.name, ', '), '-') AS products,
+      COALESCE(string_agg(DISTINCT v.name || ':' || p.name, ', '), '-') "
+      "AS products,
       c.cwe_id
     FROM cve c
     LEFT JOIN affected a ON a.cve_id = c.cve_id
     LEFT JOIN product  p ON p.product_id = a.product_id
     LEFT JOIN vendor   v ON v.vendor_id = p.vendor_id
-    WHERE ( c.summary ILIKE CAST(:kw_like AS TEXT) OR c.description ILIKE CAST(:kw_like AS TEXT) OR :kw_like IS NULL )
+    WHERE ( c.summary ILIKE CAST(:kw_like AS TEXT) OR c.description "
+    "ILIKE CAST(:kw_like AS TEXT) OR :kw_like IS NULL )
       AND ( c.severity = CAST(:sev AS TEXT) OR :sev IS NULL )
       AND ( c.published >= CAST(:start AS DATE) OR :start IS NULL )
       AND ( c.published <= CAST(:end   AS DATE) OR :end   IS NULL )
@@ -182,7 +193,8 @@ def export_csv(outfile, keyword, severity, start_date, end_date):
         start=start_date,
         end=end_date,
     )
-    with SessionLocal() as db, open(outfile, "w", newline="", encoding="utf-8") as f:
+    with SessionLocal() as db, open(
+            outfile, "w", newline="", encoding="utf-8") as f:
         rows = db.execute(text(sql), params).mappings().all()
         writer = csv.writer(f)
         writer.writerow(["cve_id", "summary", "severity", "cvss_score",
@@ -199,7 +211,8 @@ def export_csv(outfile, keyword, severity, start_date, end_date):
 @click.argument("cve_id")
 def ingest_cve(cve_id):
     """
-    Fetch one CVE by ID from NVD (v2.0) and upsert basic fields into our schema.
+    Fetch one CVE by ID from NVD (v2.0) "
+    "and upsert basic fields into our schema.
     """
     url = f"https://services.nvd.nist.gov/rest/json/cves/2.0?cveId={cve_id}"
     try:
@@ -225,7 +238,9 @@ def ingest_cve(cve_id):
                 item = arr[0]
                 dv = item.get("cvssData", {})
                 return (
-                    dv.get("version") or ("3.1" if key.endswith("V31") else "3.0" if key.endswith("V30") else "2.0"),
+                    dv.get("version") or (
+                        "3.1" if key.endswith("V31") else "3.0"
+                        if key.endswith("V30") else "2.0"),
                     item.get("baseSeverity") or dv.get("baseSeverity"),
                     item.get("baseScore") or dv.get("baseScore"),
                     dv.get("vectorString") or item.get("vectorString"),
@@ -246,7 +261,8 @@ def ingest_cve(cve_id):
         if d.get("lang") == "en":
             summary = d.get("value")
             break
-    summary = summary or (v.get("descriptions", [{}])[0].get("value") if v.get("descriptions") else "")
+    summary = summary or (v.get("descriptions", [{}])[0].get("value")
+                          if v.get("descriptions") else "")
 
     cwe_id = None
     for w in v.get("weaknesses", []):
@@ -301,7 +317,8 @@ def ingest_cve(cve_id):
                     VALUES (:cve_id, :url, :source, :tags)
                     ON CONFLICT (cve_id, url) DO NOTHING
                 """),
-                {"cve_id": cve_id, "url": ref_url, "source": ref_source, "tags": ref_tags}
+                {"cve_id": cve_id, "url": ref_url, "source":
+                    ref_source, "tags": ref_tags}
             )
 
         db.commit()
