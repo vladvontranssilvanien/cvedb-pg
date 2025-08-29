@@ -1,7 +1,8 @@
 import click
 from datetime import date
 from sqlalchemy import text
-
+import requests
+from datetime import datetime
 from app.db import engine, SessionLocal
 from app.models import Base, CVE, CWE, Vendor, Product, Affected, Reference, StatusHistory
 import csv
@@ -192,6 +193,118 @@ def export_csv(outfile, keyword, severity, start_date, end_date):
                 r["published"], r["status"], r["products"], r["cwe_id"]
             ])
     click.secho(f"📦 Exported {len(rows)} rows -> {outfile}", fg="green")
+
+
+@cli.command("ingest-cve")
+@click.argument("cve_id")
+def ingest_cve(cve_id):
+    """
+    Fetch one CVE by ID from NVD (v2.0) and upsert basic fields into our schema.
+    """
+    url = f"https://services.nvd.nist.gov/rest/json/cves/2.0?cveId={cve_id}"
+    try:
+        res = requests.get(url, timeout=30)
+        res.raise_for_status()
+        data = res.json()
+    except Exception as e:
+        click.secho(f"HTTP/parse error: {e}", fg="red")
+        return
+
+    vulns = data.get("vulnerabilities") or data.get("vulns") or []
+    if not vulns:
+        click.secho("CVE not found in NVD.", fg="yellow")
+        return
+
+    v = vulns[0]["cve"]
+
+    # helpers
+    def pick_cvss(m):
+        for key in ("cvssMetricV31", "cvssMetricV30", "cvssMetricV2"):
+            arr = m.get(key) or []
+            if arr:
+                item = arr[0]
+                dv = item.get("cvssData", {})
+                return (
+                    dv.get("version") or ("3.1" if key.endswith("V31") else "3.0" if key.endswith("V30") else "2.0"),
+                    item.get("baseSeverity") or dv.get("baseSeverity"),
+                    item.get("baseScore") or dv.get("baseScore"),
+                    dv.get("vectorString") or item.get("vectorString"),
+                )
+        return (None, None, None, None)
+
+    def to_date(s):
+        if not s:
+            return None
+        try:
+            return datetime.fromisoformat(s.replace("Z", "+00:00")).date()
+        except Exception:
+            return None
+
+    # map
+    summary = None
+    for d in v.get("descriptions", []):
+        if d.get("lang") == "en":
+            summary = d.get("value")
+            break
+    summary = summary or (v.get("descriptions", [{}])[0].get("value") if v.get("descriptions") else "")
+
+    cwe_id = None
+    for w in v.get("weaknesses", []):
+        for d in w.get("description", []):
+            val = d.get("value") or ""
+            if val.startswith("CWE-"):
+                cwe_id = val
+                break
+        if cwe_id:
+            break
+
+    published = to_date(v.get("published"))
+    modified = to_date(v.get("lastModified"))
+
+    version, severity, score, vector = pick_cvss(v.get("metrics", {}))
+
+    # upsert in DB
+    with SessionLocal() as db:
+        if cwe_id:
+            db.merge(CWE(cwe_id=cwe_id, name=cwe_id))
+
+        db.merge(CVE(
+            cve_id=cve_id,
+            summary=summary or "",
+            description=summary or "",
+            published=published,
+            modified=modified,
+            severity=severity,
+            cvss_version=version,
+            cvss_score=score,
+            cvss_vector=vector,
+            cwe_id=cwe_id,
+            source="NVD",
+            status="New",
+        ))
+
+        # references (replace existing)
+        seen = set()
+    for r in v.get("references", []):
+        ref_url = (r.get("url") or "").strip()
+        if not ref_url or ref_url in seen:
+            continue
+        seen.add(ref_url)
+        ref_source = "nvd"
+        ref_tags = ",".join(r.get("tags", [])) if r.get("tags") else None
+
+        db.execute(
+            text("""
+                INSERT INTO reference (cve_id, url, source, tags)
+                VALUES (:cve_id, :url, :source, :tags)
+                ON CONFLICT (cve_id, url) DO NOTHING
+            """),
+            dict(cve_id=cve_id, url=ref_url, source=ref_source, tags=ref_tags)
+        )
+
+        db.commit()
+
+    click.secho(f"✅ Ingested {cve_id} from NVD", fg="green")
 
 
 if __name__ == "__main__":
